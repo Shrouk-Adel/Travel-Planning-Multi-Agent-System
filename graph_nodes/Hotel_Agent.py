@@ -106,7 +106,7 @@ def hotel_agent(state: TravelState):
     Returns:
         dict: A dictionary containing hotel results and updated messages.
     """ 
-    query = f"Best hotels for "{state['user_query']}"
+    query = f"Best hotels for {state['user_query']}"
 
     try:
         hotel_results = asyncio.run(
