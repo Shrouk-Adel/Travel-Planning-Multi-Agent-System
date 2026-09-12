@@ -11,7 +11,7 @@ class OpenAIConfig:
         self.base_url = settings.openai_base_url
         self.model_name = settings.model_name
 
-    async def generate_response(self,prompt,pydantic_schema) -> str:
+    async def generate_response(self,prompt,pydantic_schema=None) -> str:
         """Generate a response from the OpenAI API based on the given prompt."""
         client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         response = client.Completions.create(
