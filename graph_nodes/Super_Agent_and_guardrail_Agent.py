@@ -1,7 +1,7 @@
 from transformers import Any
 
 from ..Travel_State import TravelState
-from prompts import guardrail_prompt, guardrail_prompt_sys, supervisor_prompt, supervisor_prompt_sys
+from prompts import guardrail_prompt, supervisor_prompt
 from pydantic import BaseModel, Field
 from ..llm.OpenAI import OpenAIConfig
 from langchain_core.messages import AIMessage
@@ -55,8 +55,7 @@ def Supervisor_Agent(state: TravelState):
     try:
         # start with gurdrail agent to check if the request is valid
         guardrail_response = openai_config.generate_response(
-            user_prompt=guardrail_prompt.format(query=user_query),
-            system_prompt=guardrail_prompt_sys,
+            prompt =guardrail_prompt.format(query=user_query),
             pydantic_schema=guardrail_schema
         )
 
@@ -90,8 +89,7 @@ def Supervisor_Agent(state: TravelState):
 
     try:
         supervisor_response = openai_config.generate_response(
-            user_prompt=supervisor_prompt.format(query=user_query),
-            system_prompt=supervisor_prompt_sys,
+            prompt=supervisor_prompt.format(query=user_query),
             pydantic_schema=supervisor_schema
         )
 

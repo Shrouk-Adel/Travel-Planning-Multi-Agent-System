@@ -84,8 +84,7 @@ def fight_agent(state: TravelState) -> str:
             )
 
             res = openai_config.generate_response(
-                    user_prompt=query,
-                    system_prompt=sys_prompt,
+                    prompt=sys_prompt,
                     pydantic_schema=FlightAgentResponse
             )
 

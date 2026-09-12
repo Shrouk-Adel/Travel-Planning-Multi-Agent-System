@@ -1,5 +1,5 @@
-guardrail_prompt ="""
-Determine whether the following request belongs to travel planning or travel
+guardrail_prompt =""""You are the input guardrail for a travel-planning application.
+Return strict JSON only. Determine whether the following request belongs to travel planning or travel
 information. Valid requests can include destinations, flights, hotels, weather,
 budgets, visas, transportation, sightseeing, food, packing, or itineraries.
 
@@ -16,11 +16,9 @@ Return strict JSON only:
 }
 """
 
-guardrail_prompt_sys ="""You are the input guardrail for a travel-planning application.
-Return strict JSON only."""
-
 
 supervisor_prompt = """
+You route work to travel specialist agents. Return strict JSON only
 You are the supervisor of a multi-agent travel-planning system.
 Choose only the specialist agents needed for the request.
 
@@ -49,7 +47,6 @@ User request:
 {query}
 """
 
-supervisor_prompt_sys= "You route work to travel specialist agents. Return strict JSON only."
 
 
 ## extractor prompt 
@@ -88,4 +85,17 @@ Generate:
 7. Booking advice
 
 Return concise travel guidance.
+"""
+
+ 
+HOTEL_AGENT_PROMPT = """
+You are a professional travel accommodation expert.
+
+Your task is to analyze the user's travel request together with the provided hotel search results and return structured hotel recommendations.
+and follow the pydantic schema.
+User Query:
+{query}
+
+Hotel Search Results:
+{hotel_results}
 """
