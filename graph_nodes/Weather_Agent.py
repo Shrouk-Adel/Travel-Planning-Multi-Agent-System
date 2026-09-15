@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List
 import asyncio
 from .dest_extractor import extract_destination
+import asyncio
 
 
 from pydantic import BaseModel, Field
@@ -31,11 +32,11 @@ async def Weather_Agent(state: TravelState):
     city =await extract_destination(state['user_query'])
     
     try:
-        weather_data = asyncio.run(
-            tavily_mcp_search(city)
+        weather_data = await asyncio.gather(
+            weather_mcp_search(city)
         )
 
-        forcast_data =asyncio.run(
+        forcast_data =await asyncio.gather(
             forecast_mcp_search(city)
         )
 

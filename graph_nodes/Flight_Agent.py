@@ -151,10 +151,13 @@ class _AirportIataGuess(BaseModel):
 
 
 async def _resolve_iata_via_llm(city_or_name: str) -> dict | None:
-    """Last-resort fallback: ask the LLM directly for the city's primary
-    airport IATA code. Used when the aviationstack search filter is
-    plan-restricted and paginating the full unfiltered airport list would
-    be too slow/unreliable to reach an alphabetically distant entry."""
+    """Last-resort fallback: ask the LLM directly for the primary airport
+    IATA code for a city — or, if given a country, that country's busiest/
+    primary international hub airport. Used when the aviationstack search
+    filter is plan-restricted and paginating the full unfiltered airport
+    list would be too slow/unreliable to reach an alphabetically distant
+    entry.
+    """
     if not city_or_name:
         return None
 
@@ -162,8 +165,17 @@ async def _resolve_iata_via_llm(city_or_name: str) -> dict | None:
         guess = await openai_config.generate_response(
             prompt=(
                 f"What is the IATA code of the main international airport "
-                f"serving the city '{city_or_name}'? Respond with the code "
-                f"and airport name only."
+                f"for '{city_or_name}'?\n\n"
+                f"- If this is a specific city, give that city's primary "
+                f"international airport.\n"
+                f"- If this is a country (not a specific city), give the "
+                f"busiest/primary international hub airport in that "
+                f"country instead of refusing — e.g. for 'Japan' answer "
+                f"with Tokyo Haneda or Narita, for 'France' answer with "
+                f"Paris Charles de Gaulle.\n"
+                f"- Always return a real 3-letter IATA code; never answer "
+                f"'N/A' or explain why one can't be chosen.\n\n"
+                f"Respond with the code and airport name only."
             ),
             pydantic_schema=_AirportIataGuess,
         )
