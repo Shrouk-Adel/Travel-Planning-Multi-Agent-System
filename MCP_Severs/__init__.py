@@ -1,1 +1,1 @@
-from mcp_client import *
+from .mcp_client import *

@@ -10,10 +10,10 @@ are missing.
 User request: {query}
 
 Return strict JSON only:
-{
+{{
   "allowed": true,
   "reason": ""
-}
+}}
 """
 
 

@@ -1,1 +1,1 @@
-from OpenAI import OpenAIConfig
+from .OpenAI import OpenAIConfig

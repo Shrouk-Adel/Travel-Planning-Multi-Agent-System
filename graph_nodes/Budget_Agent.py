@@ -3,13 +3,16 @@ from typing import List, Optional
 from enum import Enum
 
 from Travel_State import TravelState
-from ..MCP_Severs import *
-from ..prompts  import *
+from MCP_Severs import *
+from prompts  import *
 from llm import OpenAIConfig
 from langchain_core.messages import AIMessage 
 from pydantic import BaseModel, Field
 from typing import List
 import asyncio
+import logging
+
+logger =logging.getLogger(__name__)
 
 
 class BudgetRiskLevel(str, Enum):
@@ -125,7 +128,7 @@ class BudgetAgentResponse(BaseModel):
 
 openai =OpenAIConfig()
 
-def Budget_Agent(state: TravelState):
+async def Budget_Agent(state: TravelState):
     """
     Budget Agent that analyzes the user's travel request and provides budget feasibility insights.
     
@@ -133,7 +136,7 @@ def Budget_Agent(state: TravelState):
         state (TravelState): The current state of travel.
 
     """
-
+    logger.info("start budget agent")
     prompt =Budget_Agent_prompt.formate(
         user_query = state.get("user_query", ""),
         trip_constraints = state.get("trip_constraints", {}),
@@ -143,7 +146,7 @@ def Budget_Agent(state: TravelState):
     )
 
 
-    response =openai.generate_response(
+    response =await openai.generate_response(
             prompt=prompt,
             pydantic_schema=BudgetAgentResponse
         )

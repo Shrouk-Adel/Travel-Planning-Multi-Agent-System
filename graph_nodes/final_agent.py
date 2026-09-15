@@ -1,24 +1,29 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from Travel_State import TravelState
-from ..MCP_Severs import *
-from ..prompts  import *
+from MCP_Severs import *
+from prompts  import *
 from llm import OpenAIConfig
 from langchain_core.messages import AIMessage 
 from pydantic import BaseModel, Field
 from typing import List
 import asyncio
 
+import logging
+
+logger =logging.getLogger(__name__)
+
 
 llm =OpenAIConfig()
 
-def final_agent(state: TravelState):
+async def final_agent(state: TravelState):
     """
     Final agent that compiles the final itinerary and budget analysis.
 
     Args:
         state (TravelState): The current travel state containing user query, itinerary, and budget analysis.    
     """
+    logger.info("start final agent")
     if state.get("approved", False):
         review_instruction = (
         "The user approved the draft. Preserve its decisions while polishing it."
@@ -42,7 +47,7 @@ def final_agent(state: TravelState):
     )
 
 
-    response = llm.generate_response(
+    response = await llm.generate_response(
         prompt=final_itinerary_prompt)
 
 

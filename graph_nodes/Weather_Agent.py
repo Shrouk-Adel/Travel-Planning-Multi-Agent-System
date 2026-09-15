@@ -1,18 +1,22 @@
 from Travel_State import TravelState
-from ..MCP_Severs import *
-from ..prompts  import *
+from MCP_Severs import *
+from prompts  import *
 from llm import OpenAIConfig
 from langchain_core.messages import AIMessage 
 from pydantic import BaseModel, Field
 from typing import List
 import asyncio
-from dest_extractor import extract_destination
+from .dest_extractor import extract_destination
 
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
-def Weather_Agent(state: TravelState):
+import logging
+
+logger =logging.getLogger(__name__)
+
+async def Weather_Agent(state: TravelState):
     """
     Weather Agent that retrieves weather information based on the user's travel request.
     
@@ -22,9 +26,9 @@ def Weather_Agent(state: TravelState):
     Returns:
         dict: A dictionary containing weather results and updated messages.
     """ 
-    query = state['user_query']
+    logger.info("start weather agent")
 
-    city =extract_destination(state['user_query'])
+    city =await extract_destination(state['user_query'])
     
     try:
         weather_data = asyncio.run(

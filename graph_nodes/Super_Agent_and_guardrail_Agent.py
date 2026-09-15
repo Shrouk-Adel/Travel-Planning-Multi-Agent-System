@@ -1,30 +1,27 @@
-from transformers import Any
+from typing import Any
 
-from ..Travel_State import TravelState
+from Travel_State import TravelState, AGENT_ORDER, KNOWN_AGENTS
 from prompts import guardrail_prompt, supervisor_prompt
 from pydantic import BaseModel, Field
-from ..llm.OpenAI import OpenAIConfig
+from llm.OpenAI import OpenAIConfig
+import logging
 from langchain_core.messages import AIMessage
 openai_config = OpenAIConfig()
 
+logger = logging.getLogger(__name__)
+
+
 class guardrail_schema(BaseModel):
-    allowed: bool =Field(description="Indicates whether the user request is allowed or blocked")
-    reason: str =Field(description="Reason for allowing or blocking the user request")
+    allowed: bool = Field(description="Indicates whether the user request is allowed or blocked")
+    reason: str = Field(description="Reason for allowing or blocking the user request")
+
 
 class supervisor_schema(BaseModel):
-    selected_agents: list[str] =Field(description="List of selected agents for the travel request")
-    trip_constraints: dict =Field(description="Constraints for the travel request, including destination, origin, duration, budget, travel style, and special preferences")
-    reasoning: str =Field(description="Reasoning behind the selection of agents and trip constraints")
+    selected_agents: list[str] = Field(description="List of selected agents for the travel request")
+    trip_constraints: dict = Field(description="Constraints for the travel request, including destination, origin, duration, budget, travel style, and special preferences")
+    reasoning: str = Field(description="Reasoning behind the selection of agents and trip constraints")
 
 
-AGENT_ORDER = [
-    "flight_agent",
-    "hotel_agent",
-    "weather_agent",
-    "budget_agent",
-    "itinerary_agent",
-]
-    
 def _empty_constraints() -> dict[str, Any]:
     return {
         "destination": "",
@@ -35,29 +32,36 @@ def _empty_constraints() -> dict[str, Any]:
         "special_preferences": [],
     }
 
+
 def normalize_agent_name(name: str) -> str:
     return str(name).strip().lower().replace(" ", "_")
 
 
-def Supervisor_Agent(state: TravelState):
+async def Supervisor_Agent(state: TravelState):
     """
     Supervisor Agent that makes decisions based on the current travel state.
-    
+
     Args:
         state (TravelState): The current state of travel.
-        
+
     Returns:
         str: The decision made by the supervisor agent.
     """
-    user_query =state.get('user_query')  # Access the user query from the travel state
-    llm_calls = state.get('llm_calls',0)  # Access the LLM calls from the travel state
+    logger.info("start with guardrail Agent")
+    user_query = state.get('user_query')  # Access the user query from the travel state
+    llm_calls = state.get('llm_calls', 0)  # Access the LLM calls from the travel state
 
     try:
         # start with gurdrail agent to check if the request is valid
-        guardrail_response = openai_config.generate_response(
-            prompt =guardrail_prompt.format(query=user_query),
+        logger.info(f"user query is :{user_query}")
+        prompt = guardrail_prompt.format(query=user_query)
+        # logger.info(f"guardrail prompt is\n:{prompt}")
+        guardrail_response = await openai_config.generate_response(
+            prompt=prompt,
             pydantic_schema=guardrail_schema
         )
+
+        logger.info(f"guardrail response :{guardrail_response}")
 
         allowed = guardrail_response.get('allowed', False)
         reason = guardrail_response.get('reason', '').strip()
@@ -75,7 +79,6 @@ def Supervisor_Agent(state: TravelState):
             "or itinerary."
         )
 
-
         return {
             "guardrail_allowed": False,
             "guardrail_reason": reason,
@@ -88,18 +91,29 @@ def Supervisor_Agent(state: TravelState):
         }
 
     try:
-        supervisor_response = openai_config.generate_response(
+        logger.info("start supervisor agent")
+        supervisor_response = await openai_config.generate_response(
             prompt=supervisor_prompt.format(query=user_query),
             pydantic_schema=supervisor_schema
         )
+        logger.info(f"supervisor response is :{supervisor_response}")
+        # Validate against KNOWN_AGENTS before normalizing into AGENT_ORDER,
+        # so a hallucinated/misspelled agent name from the LLM is dropped
+        # here with a log line instead of silently disappearing later.
+        raw_agents = supervisor_response.get('selected_agents', [])
+        normalized_agents = [normalize_agent_name(agent) for agent in raw_agents]
 
-        normalized_agents = [normalize_agent_name(agent) for agent in supervisor_response.get('selected_agents', [])]
+        unknown = [a for a in normalized_agents if a not in KNOWN_AGENTS]
+        if unknown:
+            logger.warning(f"Supervisor selected unrecognized agents, dropping: {unknown}")
 
         selected_agents = [
             agent
             for agent in AGENT_ORDER
             if agent in normalized_agents
         ]
+
+        logger.info(f"selected agents:{selected_agents}")
         trip_constraints = supervisor_response.get('trip_constraints', _empty_constraints())
         reasoning = supervisor_response.get('reasoning', '').strip()
 

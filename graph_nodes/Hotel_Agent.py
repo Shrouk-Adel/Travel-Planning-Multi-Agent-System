@@ -1,6 +1,6 @@
 from Travel_State import TravelState
-from ..MCP_Severs import *
-from ..prompts  import *
+from MCP_Severs import *
+from prompts  import *
 from llm import OpenAIConfig
 from langchain_core.messages import AIMessage 
 from pydantic import BaseModel, Field
@@ -10,6 +10,10 @@ import asyncio
 
 from pydantic import BaseModel, Field
 from typing import List, Optional
+
+import logging
+
+logger =logging.getLogger(__name__)
 
 
 class HotelLocation(BaseModel):
@@ -96,7 +100,7 @@ class HotelAgentResponse(BaseModel):
 
 openai =OpenAIConfig()
 
-def hotel_agent(state: TravelState):
+async def hotel_agent(state: TravelState):
     """
     Hotel Agent that retrieves hotel information based on the user's travel request.
     
@@ -109,17 +113,22 @@ def hotel_agent(state: TravelState):
     query = f"Best hotels for {state['user_query']}"
 
     try:
+        logger.info("start hotel agent")
         hotel_results = asyncio.run(
             tavily_mcp_search(query)
         )
 
-        hotel_results =openai.generate_response(
+        logger.info(f"hotel_results:\n:{hotel_results}")
+
+        hotel_results =await openai.generate_response(
             prompt =HOTEL_AGENT_PROMPT.format(
                 query=query,
                 hotel_results=str(hotel_results)[:3000]
             ),
             pydantic_schema=HotelAgentResponse
         )
+
+        logger.info(f"generated result for hotsl from llm :\n{hotel_results}")
 
     except Exception as exc:
         print(

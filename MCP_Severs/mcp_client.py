@@ -8,7 +8,7 @@ import certifi
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from ..config import settings
+from config import settings
 
 
 # =========================================================
@@ -31,6 +31,8 @@ def _aviation_server_config() -> dict[str, Any]:
         "transport": "stdio",
         "command": UVX_COMMAND,
         "args": [
+            "--python", "3.13",
+            "--with", "mcp<2",
             "aviationstack-mcp",
         ],
         "env": {

@@ -1,9 +1,12 @@
 from llm import OpenAIConfig
-from ..prompts import *
+from prompts import *
 from pydantic import BaseModel, Field
 # =========================================================
 # Destination extractor
 # =========================================================
+import logging
+
+logger =logging.getLogger(__name__)
 
 
 openai =OpenAIConfig()
@@ -14,12 +17,11 @@ class DestinationExtractorResponse(BaseModel):
         description="The extracted destination from the user query."
     )
 
-def extract_destination(query: str) -> str:
+async def extract_destination(query: str) -> str:
 
-
-    response = openai.generate_response(
-        user_prompt=destination_extractor_prompt.format(query=query),
-        system_prompt=destination_extractor_prompt,
+    logger.info("extract destination")
+    response = await openai.generate_response(
+        prompt=destination_extractor_prompt.format(query=query),
         pydantic_schema=DestinationExtractorResponse
     )
 

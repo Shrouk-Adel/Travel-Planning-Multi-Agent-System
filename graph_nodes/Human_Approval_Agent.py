@@ -1,13 +1,17 @@
 from langgraph.types import interrupt
 
 from Travel_State import TravelState
-from ..MCP_Severs import *
-from ..prompts  import *
+from MCP_Severs import *
+from prompts  import *
 from llm import OpenAIConfig
 from langchain_core.messages import AIMessage 
 from pydantic import BaseModel, Field
 from typing import List
 import asyncio
+
+import logging
+
+logger =logging.getLogger(__name__)
 
 
 # =========================
@@ -15,6 +19,7 @@ import asyncio
 # =========================
 def human_approval_agent(state: TravelState):
     # Do not wrap interrupt() in try/except. LangGraph uses it to pause execution.
+    logger.info("start human approval agent")
     review = interrupt(
         {
             "question": "Do you approve this itinerary?",
