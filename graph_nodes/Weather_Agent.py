@@ -18,55 +18,44 @@ import logging
 logger =logging.getLogger(__name__)
 
 async def Weather_Agent(state: TravelState):
-    """
-    Weather Agent that retrieves weather information based on the user's travel request.
-    
-    Args:
-        state (TravelState): The current state of travel.
-        
-    Returns:
-        dict: A dictionary containing weather results and updated messages.
-    """ 
-    logger.info("start weather agent")
 
-    city =await extract_destination(state['user_query'])
-    
+    logger.info("Start Weather Agent")
+
+    destination = state.get(
+        "trip_constraints", {}
+    ).get("destination", "")
+
+    if not destination:
+        return {
+            "weather_results": "Destination is missing."
+        }
+
     try:
-        weather_data = await asyncio.gather(
-            weather_mcp_search(city)
-        )
 
-        forcast_data =await asyncio.gather(
-            forecast_mcp_search(city)
-        )
+        weather_data = await weather_mcp_search(destination)
+        forecast_data = await forecast_mcp_search(destination)
 
-        weather_results =f"""
-            Current Weather:
-            {weather_data}
+        weather_results = {
+            "current": weather_data,
+            "forecast": forecast_data
+        }
 
-            Forecast:
-            {forcast_data}
-        """
+        return {
+            "weather_results": weather_results,
+            "messages": [
+                AIMessage(content="Weather information retrieved.")
+            ]
+        }
 
     except Exception as exc:
-        print(
-            f"WEATHER AGENT MCP ERROR: "
-            f"{type(exc).__name__}: {exc}",
-            flush=True,
-        )
 
-        weather_results = (
-            f"Live weather information for {city} "
-            "is temporarily unavailable. Give general "
-            "seasonal guidance and advise the traveler "
-            "to verify the forecast before departure."
-        )
+        logger.error("Weather Agent failed", exc_info=True)
 
-    return {
-        "weather_results": weather_results,
-        "messages": [
-            AIMessage(
-                content="Weather information processed."
-            )
-        ],
-    }
+        return {
+            "weather_results": {
+                "status": "unavailable"
+            },
+            "messages": [
+                AIMessage(content="Weather search failed.")
+            ]
+        }

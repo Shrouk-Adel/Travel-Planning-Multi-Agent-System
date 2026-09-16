@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TripMate AI</title>
-  <link rel="stylesheet" href="/ui/style.css">
+  <link rel="stylesheet" href="/ui/style.css?v=4">
 </head>
 <body>
   <div class="page-bg">
@@ -29,9 +29,7 @@
       <div class="card-header">
         <div>
           <h2>Where do you want to go?</h2>
-          <p>
-            Example: Plan a complete 7 days Japan trip from Bangladesh under 2 lakhs.
-          </p>
+          <p>Fill in your trip details and let the agents build your plan.</p>
         </div>
         <div class="status-pill">
           <span class="status-dot"></span>
@@ -39,30 +37,88 @@
         </div>
       </div>
 
-      <div class="input-area">
-        <textarea
-          id="userInput"
-          placeholder="Plan a complete 7 days Japan trip including flights, hotels and sightseeing under 2 lakhs..."
-        ></textarea>
-        <button id="sendBtn" onclick="sendMessage()">
-          <span id="btnText">Generate Draft</span>
-          <span id="btnLoader" class="loader hidden"></span>
-        </button>
-      </div>
+      <form id="tripForm" class="trip-form">
+        <div class="route-row">
+          <div class="field route-field">
+            <label for="originInput"><span class="field-icon">🛫</span>Leaving from</label>
+            <div class="combobox" data-combobox="origin">
+              <input type="text" id="originInput" class="combobox-input" placeholder="Select a city" autocomplete="off" required>
+              <div id="originDropdown" class="combobox-dropdown hidden"></div>
+            </div>
+          </div>
+          <div class="route-divider" aria-hidden="true">
+            <span class="route-line"></span>
+            <span class="route-plane">✈️</span>
+            <span class="route-line"></span>
+          </div>
+          <div class="field route-field">
+            <label for="destinationInput"><span class="field-icon">🛬</span>Going to</label>
+            <div class="combobox" data-combobox="destination">
+              <input type="text" id="destinationInput" class="combobox-input" placeholder="Select a city" autocomplete="off" required>
+              <div id="destinationDropdown" class="combobox-dropdown hidden"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div class="field">
+            <label for="startDateInput"><span class="field-icon">📅</span>Start date</label>
+            <input type="date" id="startDateInput">
+          </div>
+          <div class="field">
+            <label for="durationInput"><span class="field-icon">🌙</span>Duration (days)</label>
+            <input type="number" id="durationInput" min="1" max="60" placeholder="7">
+          </div>
+          <div class="field">
+            <label for="travelersInput"><span class="field-icon">🧑‍🤝‍🧑</span>Travelers</label>
+            <input type="number" id="travelersInput" min="1" max="20" placeholder="2">
+          </div>
+        </div>
+
+        <div class="field budget-field">
+          <label for="budgetInput"><span class="field-icon">💰</span>Budget</label>
+          <div class="budget-row">
+            <input type="number" id="budgetInput" min="0" placeholder="200000">
+            <div class="combobox currency-combobox" data-combobox="currency">
+              <input type="text" id="currencyInput" class="combobox-input" placeholder="Currency" autocomplete="off" value="BDT — Bangladeshi Taka">
+              <input type="hidden" id="currencyCode" value="BDT">
+              <div id="currencyDropdown" class="combobox-dropdown hidden"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label><span class="field-icon">✨</span>Interests</label>
+          <div id="interestChips" class="interest-chips">
+            <button type="button" class="interest-chip" data-value="Flights"><span>✈️</span>Flights</button>
+            <button type="button" class="interest-chip" data-value="Hotels"><span>🏨</span>Hotels</button>
+            <button type="button" class="interest-chip" data-value="Sightseeing"><span>🗺️</span>Sightseeing</button>
+            <button type="button" class="interest-chip" data-value="Food"><span>🍜</span>Food</button>
+            <button type="button" class="interest-chip" data-value="Adventure"><span>🏔️</span>Adventure</button>
+            <button type="button" class="interest-chip" data-value="Relaxation"><span>🧘</span>Relaxation</button>
+            <button type="button" class="interest-chip" data-value="Shopping"><span>🛍️</span>Shopping</button>
+            <button type="button" class="interest-chip" data-value="Nightlife"><span>🌃</span>Nightlife</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="notesInput"><span class="field-icon">📝</span>Anything else? <span class="optional-label">(optional)</span></label>
+          <textarea id="notesInput" placeholder="e.g. traveling with kids, prefer vegetarian food, need visa info..."></textarea>
+        </div>
+
+        <div class="form-footer">
+          <button type="submit" id="sendBtn">
+            <span id="btnText">Generate Draft</span>
+            <span id="btnLoader" class="loader hidden"></span>
+          </button>
+        </div>
+      </form>
 
       <div class="quick-prompts">
-        <button onclick="setPrompt('Plan a complete 7 days Japan trip from Bangladesh including flights, hotels and sightseeing under 2 lakhs.')">
-          Japan Trip
-        </button>
-        <button onclick="setPrompt('Plan a 5 days Dubai trip from Dhaka with flights, hotels and sightseeing.')">
-          Dubai Trip
-        </button>
-        <button onclick="setPrompt('Plan a 7 days Thailand trip from Bangladesh with budget hotels and sightseeing.')">
-          Thailand Trip
-        </button>
-        <button onclick="setPrompt('Give me all country flight info.')">
-          Global Flights
-        </button>
+        <span class="quick-prompts-label">Quick start:</span>
+        <button type="button" onclick="applyPreset('japan')">🗾 Japan Trip</button>
+        <button type="button" onclick="applyPreset('dubai')">🏙️ Dubai Trip</button>
+        <button type="button" onclick="applyPreset('thailand')">🏝️ Thailand Trip</button>
       </div>
     </section>
 
@@ -131,6 +187,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-  <script src="/ui/script.js"></script>
+  <script src="/ui/script.js?v=4"></script>
 </body>
 </html>

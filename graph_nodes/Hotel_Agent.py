@@ -1,134 +1,101 @@
 from Travel_State import TravelState
 from MCP_Severs import *
-from prompts  import *
+from prompts import *
 from llm import OpenAIConfig
-from langchain_core.messages import AIMessage 
-from pydantic import BaseModel, Field
-from typing import List
-import asyncio
-
-
-from pydantic import BaseModel, Field
+from langchain_core.messages import AIMessage
 from typing import List, Optional
+from pydantic import BaseModel
 
+import json
 import logging
 
-logger =logging.getLogger(__name__)
-
-
-class HotelLocation(BaseModel):
-    city: str = Field(description="City where the hotel is located")
-    country: Optional[str] = None
-    neighborhood: Optional[str] = Field(
-        default=None,
-        description="Neighborhood or area of the hotel"
-    )
-
-
-class HotelPrice(BaseModel):
-    amount: Optional[float] = Field(
-        default=None,
-        description="Price amount"
-    )
-    currency: Optional[str] = Field(
-        default=None,
-        description="Currency code, e.g. USD, EUR, EGP"
-    )
-    period: Optional[str] = Field(
-        default=None,
-        description="Price period, e.g. per night, per stay"
-    )
+logger = logging.getLogger(__name__)
 
 
 class Hotel(BaseModel):
-    name: str = Field(description="Hotel name")
-    location: HotelLocation
-    star_rating: Optional[float] = Field(
-        default=None,
-        description="Hotel star rating if available"
-    )
-    guest_rating: Optional[float] = Field(
-        default=None,
-        description="Guest rating if available"
-    )
-    price: Optional[HotelPrice] = Field(
-        default=None,
-        description="Price information if available"
-    )
-    amenities: List[str] = Field(
-        default_factory=list,
-        description="Important amenities mentioned in the source"
-    )
-    highlights: List[str] = Field(
-        default_factory=list,
-        description="Important hotel features or advantages"
-    )
-    source_url: Optional[str] = Field(
-        default=None,
-        description="URL of the source where this hotel was found"
-    )
+    name: str
+    location: str
+    price: Optional[str] = None
+    rating: Optional[float] = None
 
 
 class HotelAgentResponse(BaseModel):
-    destination: str = Field(
-        description="Requested destination"
-    )
-    hotels: List[Hotel] = Field(
-        default_factory=list,
-        description="Hotels found in the search results"
-    )
-    recommended_neighborhoods: List[str] = Field(
-        default_factory=list,
-        description="Recommended areas to stay"
-    )
-    accommodation_advice: List[str] = Field(
-        default_factory=list,
-        description="General accommodation recommendations"
-    )
-    search_status: str = Field(
-        description="live_results, general_advice, or unavailable"
-    )
-    disclaimer: Optional[str] = Field(
-        default=None,
-        description="Important limitation or pricing disclaimer"
-    )
+    destination: str
+    search_status: str
+    hotels: List[Hotel] = []
+
 
 # =========================
-# Hotel Agent - original behavior kept
+# Hotel Agent
 # =========================
 
+openai = OpenAIConfig()
 
-openai =OpenAIConfig()
+MAX_RESULTS = 5        # how many search hits to keep
+MAX_CONTENT_LEN = 500  # chars kept per hit's scraped content
+
+
+def _condense_tavily_results(raw_results, max_results=MAX_RESULTS, max_content_len=MAX_CONTENT_LEN):
+    """
+    Tavily MCP returns [{'type': 'text', 'text': '<json string>', 'id': ...}].
+    The JSON string's 'results' list has full scraped 'content' per hit,
+    which is what blows up the prompt. Keep only title + a trimmed
+    content snippet per hit, and cap how many hits we forward.
+    Falls back to str(raw_results)[:2000] if the shape is unexpected.
+    """
+    try:
+        payload = json.loads(raw_results[0]["text"])
+        results = payload.get("results", [])[:max_results]
+
+        condensed = []
+        for r in results:
+            content = (r.get("content") or "").strip()
+            if len(content) > max_content_len:
+                content = content[:max_content_len] + "..."
+            condensed.append({
+                "title": r.get("title", ""),
+                "content": content,
+            })
+        return json.dumps(condensed, ensure_ascii=False)
+
+    except Exception as exc:
+        logger.warning(f"Could not condense tavily results, falling back to raw slice: {exc}")
+        return str(raw_results)[:2000]
+
 
 async def hotel_agent(state: TravelState):
     """
     Hotel Agent that retrieves hotel information based on the user's travel request.
-    
+
     Args:
         state (TravelState): The current state of travel.
-        
+
     Returns:
         dict: A dictionary containing hotel results and updated messages.
-    """ 
-    query = f"Best hotels for {state['user_query']}"
+    """
+    trip_constraints = state["trip_constraints"]
+    destination = trip_constraints["destination"]
+
+    query = f"Best hotels for {destination} and its price "
 
     try:
         logger.info("start hotel agent")
-        hotel_results = asyncio.run(
-            tavily_mcp_search(query)
-        )
+        raw_results = await tavily_mcp_search(query)
 
-        logger.info(f"hotel_results:\n:{hotel_results}")
+        logger.info(f"hotel_results raw:\n:{raw_results}")
 
-        hotel_results =await openai.generate_response(
-            prompt =HOTEL_AGENT_PROMPT.format(
+        condensed_results = _condense_tavily_results(raw_results)
+        logger.info(f"hotel_results condensed ({len(condensed_results)} chars):\n:{condensed_results}")
+
+        hotel_results = await openai.generate_response(
+            prompt=HOTEL_AGENT_PROMPT.format(
                 query=query,
-                hotel_results=str(hotel_results)[:3000]
+                hotel_results=condensed_results
             ),
             pydantic_schema=HotelAgentResponse
         )
 
-        logger.info(f"generated result for hotsl from llm :\n{hotel_results}")
+        logger.info(f"generated result for hotels from llm :\n{hotel_results}")
 
     except Exception as exc:
         print(
@@ -143,7 +110,7 @@ async def hotel_agent(state: TravelState):
             "guidance based on the destination and clearly "
             "label it as non-live advice."
         )
-      
+
     return {
         "hotel_results": hotel_results,
         "messages": [

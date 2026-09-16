@@ -41,6 +41,7 @@ class OpenAIConfig:
         """
         request_kwargs = dict(
             model=settings.MODEL_NAME,
+            max_tokens =6000,
             messages=[{"role": "user", "content": prompt}],
             **kwargs,
         )
@@ -114,6 +115,7 @@ class OpenAIConfig:
             response = await self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
+                max_tokens=6000,
                 **kwargs,
             )
         except Exception:

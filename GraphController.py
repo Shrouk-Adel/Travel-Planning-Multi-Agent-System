@@ -1,22 +1,15 @@
-# =========================
-# FastAPI-facing helpers
-# =========================
 from langgraph.types import Command
 from typing import Any
-from langchain_core.messages import (
-    AnyMessage,
-    HumanMessage,
-    AIMessage,
-    SystemMessage,
-)
-from graph_nodes.Super_Agent_and_guardrail_Agent import _empty_constraints
 import uuid
+
+from state_builder import build_initial_state
+
 
 class GraphController:
     def __init__(self, travel_graph):
-        self.travel_graph =travel_graph
+        self.travel_graph = travel_graph
 
-    def _interrupt_payload(self,result: dict[str, Any]) -> dict[str, Any] | None:
+    def _interrupt_payload(self, result: dict[str, Any]) -> dict[str, Any] | None:
         interrupts = result.get("__interrupt__", [])
         if not interrupts:
             return None
@@ -25,8 +18,8 @@ class GraphController:
         payload = getattr(first_interrupt, "value", first_interrupt)
         return payload if isinstance(payload, dict) else {"value": payload}
 
-
-    def _serialize_result(self,
+    def _serialize_result(
+        self,
         result: dict[str, Any],
         thread_id: str,
     ) -> dict[str, Any]:
@@ -60,54 +53,84 @@ class GraphController:
             ),
             "selected_agents": result.get("selected_agents", []),
             "trip_constraints": result.get("trip_constraints", {}),
-            "supervisor_reasoning": result.get("supervisor_reasoning", ""),
-            "guardrail_allowed": result.get("guardrail_allowed", True),
-            "guardrail_reason": result.get("guardrail_reason", ""),
             "approved": result.get("approved"),
             "human_feedback": result.get("human_feedback", ""),
             "llm_calls": result.get("llm_calls", 0),
         }
 
-
-    async def run_travel_agent(self,user_input: str, thread_id: str | None = None):
+    async def run_travel_agent(
+        self,
+        request_data,
+        thread_id: str | None = None,
+    ):
         """Start a new travel-planning run and pause at human approval."""
+
         if not thread_id:
             thread_id = f"user_{uuid.uuid4().hex}"
 
-        config = {"configurable": {"thread_id": thread_id}}
+        initial_state = build_initial_state(
+            origin=request_data.origin,
+            destination=request_data.destination,
+            date=request_data.date,
+            duration=request_data.duration,
+            budget=request_data.budget,
+            currency=request_data.currency,
+            num_travelers=request_data.num_travelers,
+            interests=request_data.interests,
+            message=request_data.message,
+        )
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            },
+            "run_name": "Travel Planning - New Request",
+            "tags": [
+                "travel-agent",
+                "new-request",
+            ],
+            "metadata": {
+                "thread_id": thread_id,
+                "origin": request_data.origin,
+                "destination": request_data.destination,
+                "num_travelers": request_data.num_travelers,
+            },
+        }
 
         result = await self.travel_graph.ainvoke(
-            {
-                "messages": [HumanMessage(content=user_input)],
-                "user_query": user_input,
-                "guardrail_allowed": True,
-                "guardrail_reason": "",
-                "selected_agents": [],
-                "trip_constraints": _empty_constraints(),
-                "supervisor_reasoning": "",
-                "flight_results": "",
-                "hotel_results": "",
-                "weather_results": "",
-                "budget_results": "",
-                "itinerary": "",
-                "approval_request": "",
-                "approved": False,
-                "human_feedback": "",
-                "final_response": "",
-                "llm_calls": 0,
-            },
+            initial_state,
             config=config,
         )
 
         return self._serialize_result(result, thread_id)
 
-
-    async def resume_travel_agent(self,thread_id: str, approved: bool, feedback: str = "" ):
+    async def resume_travel_agent(
+        self,
+        thread_id: str,
+        approved: bool,
+        feedback: str = "",
+    ):
         """Resume the paused LangGraph thread after human review."""
+
         if not thread_id:
             raise ValueError("thread_id is required to resume a travel plan.")
 
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {
+                "thread_id": thread_id,
+            },
+            "run_name": "Travel Planning - Human Approval",
+            "tags": [
+                "travel-agent",
+                "human-approval",
+            ],
+            "metadata": {
+                "thread_id": thread_id,
+                "approved": approved,
+                "has_feedback": bool(feedback.strip()),
+            },
+        }
+
         result = await self.travel_graph.ainvoke(
             Command(
                 resume={

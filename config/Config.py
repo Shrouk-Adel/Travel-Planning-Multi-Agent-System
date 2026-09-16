@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # AviationStack
     # ========================================================
 
-    AVIATION_STACK_API_KEY:str
+    AVIATIONSTACK_API_KEY:str
 
     # Development:
     AVIATION_MCP_TRANSPORT:str

@@ -1,291 +1,660 @@
-from pydantic import BaseModel, Field, ValidationError
 from typing import List, Optional
-from Travel_State import TravelState
-from MCP_Severs import *
-from prompts import *
-from llm import OpenAIConfig
+import logging
+
+from pydantic import BaseModel, Field
 from langchain_core.messages import AIMessage
 
-import logging
+from Travel_State import TravelState
+from llm import OpenAIConfig
+
 
 logger = logging.getLogger(__name__)
 
 
+# ============================================================
+# Pydantic Schemas
+# ============================================================
+
 class ItineraryActivity(BaseModel):
-    time: Optional[str] = Field(
-        default=None,
-        description="Suggested time for the activity, e.g. '09:00 AM'"
-    )
-
-    activity: str = Field(
-        description="Name or description of the activity"
-    )
-
-    location: Optional[str] = Field(
-        default=None,
-        description="Location or attraction"
-    )
-
-    duration: Optional[str] = Field(
-        default=None,
-        description="Expected duration, e.g. '2 hours'"
-    )
-
-    estimated_cost: Optional[float] = Field(
-        default=None,
-        description="Estimated cost of the activity"
-    )
-
-    currency: Optional[str] = Field(
-        default=None,
-        description="Currency of the estimated cost"
-    )
-
-    notes: Optional[str] = Field(
-        default=None,
-        description="Additional practical information"
-    )
+    time: Optional[str] = None
+    activity: str
+    location: Optional[str] = None
+    duration: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    currency: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ItineraryDay(BaseModel):
-    day: int = Field(
-        description="Day number starting from 1"
-    )
-
-    date: Optional[str] = Field(
-        default=None,
-        description="Calendar date if available"
-    )
-
-    title: Optional[str] = Field(
-        default=None,
-        description="Short title describing the day's plan"
-    )
+    day: int
+    date: Optional[str] = None
+    title: Optional[str] = None
 
     activities: List[ItineraryActivity] = Field(
-        default_factory=list,
-        description="Activities planned for this day"
+        default_factory=list
     )
 
-    daily_estimated_cost: Optional[float] = Field(
-        default=None,
-        description="Estimated total cost for this day"
-    )
-
-    currency: Optional[str] = Field(
-        default=None,
-        description="Currency used for daily estimated cost"
-    )
+    daily_estimated_cost: Optional[float] = None
+    currency: Optional[str] = None
 
 
 class TransportationSegment(BaseModel):
-    from_location: str = Field(
-        description="Starting location"
-    )
+    from_location: str
+    to_location: str
+    mode: str
 
-    to_location: str = Field(
-        description="Destination location"
-    )
-
-    mode: str = Field(
-        description="Transportation method, e.g. metro, taxi, bus, walking"
-    )
-
-    estimated_duration: Optional[str] = Field(
-        default=None,
-        description="Estimated travel duration"
-    )
-
-    estimated_cost: Optional[float] = Field(
-        default=None,
-        description="Estimated transportation cost"
-    )
-
-    currency: Optional[str] = Field(
-        default=None,
-        description="Currency of the estimated cost"
-    )
+    estimated_duration: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    currency: Optional[str] = None
 
 
 class ItineraryAgentResponse(BaseModel):
-    destination: str = Field(
-        description="Main destination of the trip"
+
+    # --------------------------------------------------------
+    # Trip information
+    # --------------------------------------------------------
+
+    destination: str
+    trip_duration: Optional[str] = None
+
+    # --------------------------------------------------------
+    # Flight information
+    # --------------------------------------------------------
+
+    departure_airport: Optional[str] = None
+    arrival_airport: Optional[str] = None
+
+    flight_details: List[str] = Field(
+        default_factory=list
     )
 
-    trip_duration: Optional[str] = Field(
-        default=None,
-        description="Trip duration, e.g. '5 days'"
-    )
+    # --------------------------------------------------------
+    # Hotel information
+    # --------------------------------------------------------
+
+    selected_hotel: Optional[str] = None
+    hotel_price: Optional[str] = None
+
+    # --------------------------------------------------------
+    # Daily itinerary
+    # --------------------------------------------------------
 
     itinerary: List[ItineraryDay] = Field(
-        default_factory=list,
-        description="Day-by-day travel itinerary"
+        default_factory=list
     )
+
+    # --------------------------------------------------------
+    # Transportation
+    # --------------------------------------------------------
 
     transportation: List[TransportationSegment] = Field(
-        default_factory=list,
-        description="Important transportation segments between activities"
+        default_factory=list
     )
 
-    total_estimated_cost: Optional[float] = Field(
-        default=None,
-        description="Estimated total cost of activities and transportation"
-    )
+    # --------------------------------------------------------
+    # Cost
+    # --------------------------------------------------------
 
-    currency: Optional[str] = Field(
-        default=None,
-        description="Primary currency used for the cost estimates"
-    )
+    total_estimated_cost: Optional[float] = None
+    currency: Optional[str] = None
 
-    budget_status: Optional[str] = Field(
-        default=None,
-        description=(
-            "Whether the itinerary is within budget, "
-            "near budget, or exceeds budget"
-        )
-    )
+    budget_status: Optional[str] = None
+
+    # --------------------------------------------------------
+    # Additional information
+    # --------------------------------------------------------
 
     practical_notes: List[str] = Field(
-        default_factory=list,
-        description="Important practical notes for the traveler"
+        default_factory=list
     )
 
     assumptions: List[str] = Field(
-        default_factory=list,
-        description="Assumptions made when information was unavailable"
+        default_factory=list
     )
 
 
-def _cost_str(amount: Optional[float], currency: Optional[str]) -> str:
+# ============================================================
+# LLM
+# ============================================================
+
+llm = OpenAIConfig()
+
+
+# ============================================================
+# Helper: format cost
+# ============================================================
+
+def _cost_str(
+    amount: Optional[float],
+    currency: Optional[str]
+) -> str:
+
     if amount is None:
         return ""
-    return f"{amount:.2f} {currency}".strip() if currency else f"{amount:.2f}"
+
+    if currency:
+        return f"{amount:.2f} {currency}"
+
+    return f"{amount:.2f}"
 
 
-def render_itinerary_markdown(plan: ItineraryAgentResponse) -> str:
-    """Turn the structured itinerary response into a markdown string
-    the frontend can safely pass straight into marked.parse()."""
+# ============================================================
+# Helper: Render itinerary as Markdown
+# ============================================================
 
-    lines: list[str] = []
+def render_itinerary_markdown(
+    plan: ItineraryAgentResponse
+) -> str:
 
-    lines.append(f"# {plan.destination} Travel Plan")
+    lines: List[str] = []
+
+    # --------------------------------------------------------
+    # Header
+    # --------------------------------------------------------
+
+    lines.append(
+        f"# {plan.destination} Travel Plan"
+    )
+
     if plan.trip_duration:
-        lines.append(f"**Duration:** {plan.trip_duration}")
+        lines.append(
+            f"**Duration:** {plan.trip_duration}"
+        )
+
+    # --------------------------------------------------------
+    # Airports
+    # --------------------------------------------------------
+
+    if (
+        plan.departure_airport
+        or plan.arrival_airport
+    ):
+
+        lines.append("")
+
+        lines.append("## Flights")
+
+        if plan.departure_airport:
+            lines.append(
+                f"- **Departure:** {plan.departure_airport}"
+            )
+
+        if plan.arrival_airport:
+            lines.append(
+                f"- **Arrival:** {plan.arrival_airport}"
+            )
+
+        for flight in plan.flight_details:
+            lines.append(
+                f"- {flight}"
+            )
+
+    # --------------------------------------------------------
+    # Hotel
+    # --------------------------------------------------------
+
+    if plan.selected_hotel:
+
+        lines.append("")
+
+        lines.append("## Hotel")
+
+        lines.append(
+            f"- **Hotel:** {plan.selected_hotel}"
+        )
+
+        if plan.hotel_price:
+            lines.append(
+                f"- **Price:** {plan.hotel_price}"
+            )
+
+    # --------------------------------------------------------
+    # Total cost
+    # --------------------------------------------------------
 
     if plan.total_estimated_cost is not None:
+
+        lines.append("")
+
         lines.append(
             f"**Estimated total cost:** "
             f"{_cost_str(plan.total_estimated_cost, plan.currency)}"
         )
 
     if plan.budget_status:
-        lines.append(f"**Budget status:** {plan.budget_status}")
+
+        lines.append(
+            f"**Budget status:** {plan.budget_status}"
+        )
+
+    # --------------------------------------------------------
+    # Daily itinerary
+    # --------------------------------------------------------
 
     lines.append("")
 
-    for day in plan.itinerary:
-        title = f" — {day.title}" if day.title else ""
-        date = f" ({day.date})" if day.date else ""
-        lines.append(f"## Day {day.day}{date}{title}")
+    lines.append("## Daily Itinerary")
 
-        for act in day.activities:
-            time_prefix = f"**{act.time}** — " if act.time else ""
+    for day in plan.itinerary:
+
+        title = (
+            f" — {day.title}"
+            if day.title
+            else ""
+        )
+
+        date = (
+            f" ({day.date})"
+            if day.date
+            else ""
+        )
+
+        lines.append(
+            f"### Day {day.day}{date}{title}"
+        )
+
+        for activity in day.activities:
+
+            time_prefix = (
+                f"**{activity.time}** — "
+                if activity.time
+                else ""
+            )
+
             details = []
-            if act.location:
-                details.append(act.location)
-            if act.duration:
-                details.append(act.duration)
-            cost = _cost_str(act.estimated_cost, act.currency)
+
+            if activity.location:
+                details.append(
+                    activity.location
+                )
+
+            if activity.duration:
+                details.append(
+                    activity.duration
+                )
+
+            cost = _cost_str(
+                activity.estimated_cost,
+                activity.currency
+            )
+
             if cost:
                 details.append(cost)
 
-            detail_str = f" ({', '.join(details)})" if details else ""
-            lines.append(f"- {time_prefix}{act.activity}{detail_str}")
+            detail_text = (
+                f" ({', '.join(details)})"
+                if details
+                else ""
+            )
 
-            if act.notes:
-                lines.append(f"  - _{act.notes}_")
+            lines.append(
+                f"- {time_prefix}"
+                f"{activity.activity}"
+                f"{detail_text}"
+            )
+
+            if activity.notes:
+                lines.append(
+                    f"  - _{activity.notes}_"
+                )
 
         if day.daily_estimated_cost is not None:
+
             lines.append(
-                f"\n*Estimated day cost: "
+                f"*Estimated day cost: "
                 f"{_cost_str(day.daily_estimated_cost, day.currency)}*"
             )
 
         lines.append("")
 
+    # --------------------------------------------------------
+    # Transportation
+    # --------------------------------------------------------
+
     if plan.transportation:
-        lines.append("## Transportation")
-        for seg in plan.transportation:
-            cost = _cost_str(seg.estimated_cost, seg.currency)
-            cost_str = f" — {cost}" if cost else ""
-            duration_str = f" ({seg.estimated_duration})" if seg.estimated_duration else ""
-            lines.append(
-                f"- {seg.from_location} → {seg.to_location} via {seg.mode}"
-                f"{duration_str}{cost_str}"
+
+        lines.append(
+            "## Transportation"
+        )
+
+        for segment in plan.transportation:
+
+            duration = (
+                f" ({segment.estimated_duration})"
+                if segment.estimated_duration
+                else ""
             )
+
+            cost = _cost_str(
+                segment.estimated_cost,
+                segment.currency
+            )
+
+            cost_text = (
+                f" — {cost}"
+                if cost
+                else ""
+            )
+
+            lines.append(
+                f"- {segment.from_location} "
+                f"→ {segment.to_location} "
+                f"via {segment.mode}"
+                f"{duration}"
+                f"{cost_text}"
+            )
+
         lines.append("")
+
+    # --------------------------------------------------------
+    # Practical notes
+    # --------------------------------------------------------
 
     if plan.practical_notes:
-        lines.append("## Practical Notes")
+
+        lines.append(
+            "## Practical Notes"
+        )
+
         for note in plan.practical_notes:
-            lines.append(f"- {note}")
+            lines.append(
+                f"- {note}"
+            )
+
         lines.append("")
 
+    # --------------------------------------------------------
+    # Assumptions
+    # --------------------------------------------------------
+
     if plan.assumptions:
-        lines.append("## Assumptions")
-        for a in plan.assumptions:
-            lines.append(f"- {a}")
+
+        lines.append(
+            "## Assumptions"
+        )
+
+        for assumption in plan.assumptions:
+            lines.append(
+                f"- {assumption}"
+            )
+
         lines.append("")
 
     return "\n".join(lines).strip()
 
 
-llm = OpenAIConfig()
+# ============================================================
+# Itinerary Agent
+# ============================================================
 
+async def Itinerary_Agent(
+    state: TravelState
+):
 
-async def Itinerar_Agent(state: TravelState):
-    logger.info("start itinerary agent")
-
-    prompt = Itinerary_Agent_prompt.format(
-        user_query=state.get("user_query", ""),
-        trip_constraints=state.get("trip_constraints", {}),
-        flight_results=state.get("flight_results", {}),
-        hotel_results=state.get("hotel_results", {}),
-        weather_results=state.get("weather_results", {}),
-        budget_results=state.get("budget_results", {}),
-    )
-
-    approval_request = (
-        "Please review the generated draft itinerary. Approve it to create the "
-        "final polished plan, or provide feedback for revision."
+    logger.info(
+        "Starting Itinerary Agent"
     )
 
     try:
-        response = await llm.generate_response(
-            prompt=prompt,
-            pydantic_schema=ItineraryAgentResponse,
+
+        # ====================================================
+        # 1. Get basic trip information
+        # ====================================================
+
+        constraints = state.get(
+            "trip_constraints",
+            {}
         )
 
-        plan = ItineraryAgentResponse.model_validate(response)
-        itinerary_markdown = render_itinerary_markdown(plan)
+        destination = constraints.get(
+            "destination",
+            ""
+        )
 
-    except (ValidationError, Exception) as exp:
-        logger.error("Itinerary Agent failed", exc_info=True)
-        return {
-            "itinerary": (
-                "The itinerary could not be generated due to an internal "
-                f"error: {exp}"
+        duration = constraints.get(
+            "duration",
+            ""
+        )
+
+        travel_style = constraints.get(
+            "travel_style",
+            ""
+        )
+
+        # ====================================================
+        # 2. Get previous agent results
+        # ====================================================
+
+        flight = state.get(
+            "flight_results",
+            {}
+        ) or {}
+
+        hotel = state.get(
+            "hotel_results",
+            {}
+        ) or {}
+
+        weather = state.get(
+            "weather_results",
+            {}
+        ) or {}
+
+        # ====================================================
+        # 3. Build SMALL flight input
+        #
+        # Don't send the entire flight response.
+        # ====================================================
+
+        flight_input = {
+
+            "departure_airport": flight.get(
+                "departure_airport"
             ),
-            "approval_request": approval_request,
-            "messages": [
-                AIMessage(content=f"Itinerary Agent failed with error: {exp}")
-            ],
-            "llm_calls": state.get("llm_calls", 0),
+
+            "arrival_airport": flight.get(
+                "arrival_airport"
+            ),
+
+            "flights": flight.get(
+                "flights",
+                []
+            )
         }
 
-    return {
-        "itinerary": itinerary_markdown,
-        "approval_request": approval_request,
-        "messages": [AIMessage(content="Draft itinerary created for human review.")],
-        "llm_calls": state.get("llm_calls", 0) + 1,
-    }
+        # ====================================================
+        # 4. Build SMALL hotel input
+        # ====================================================
+
+        hotels = hotel.get(
+            "hotels",
+            []
+        )
+
+        # Keep only useful hotel information
+        hotel_input = []
+
+        for h in hotels[:5]:
+
+            if isinstance(h, dict):
+
+                hotel_input.append({
+                    "name": h.get("name"),
+                    "location": h.get("location"),
+                    "price": h.get("price"),
+                    "rating": h.get("rating"),
+                    "source_url": h.get("source_url")
+                })
+
+            else:
+
+                # Pydantic object support
+                try:
+
+                    hotel_input.append({
+                        "name": getattr(
+                            h,
+                            "name",
+                            None
+                        ),
+
+                        "location": getattr(
+                            h,
+                            "location",
+                            None
+                        ),
+
+                        "price": getattr(
+                            h,
+                            "price",
+                            None
+                        ),
+
+                        "rating": getattr(
+                            h,
+                            "rating",
+                            None
+                        ),
+
+                        "source_url": getattr(
+                            h,
+                            "source_url",
+                            None
+                        )
+                    })
+
+                except Exception:
+                    continue
+
+        # ====================================================
+        # 5. Build SMALL weather input
+        # ====================================================
+
+        weather_input = {
+
+            "current": weather.get(
+                "current"
+            ),
+
+            "forecast": weather.get(
+                "forecast"
+            )
+        }
+
+        # ====================================================
+        # 6. Prompt
+        # ====================================================
+
+        prompt = f"""
+You are a travel itinerary planner.
+
+Create a practical day-by-day travel itinerary.
+
+TRIP
+Destination: {destination}
+Duration: {duration}
+Travel style: {travel_style}
+
+FLIGHT INFORMATION
+{flight_input}
+
+HOTEL INFORMATION
+{hotel_input}
+
+WEATHER INFORMATION
+{weather_input}
+
+REQUIREMENTS
+
+1. Create a practical itinerary for each day.
+2. Include the departure and arrival airport names when available.
+3. Include useful flight information when available.
+4. Select a suitable hotel from the provided hotels.
+5. Consider the weather when choosing activities.
+6. Include transportation between important locations.
+7. Include estimated activity and transportation costs when available.
+8. Do not invent flight information.
+9. Do not invent hotel prices.
+10. Do not invent weather information.
+11. If information is missing, leave the field empty.
+12. Keep the itinerary concise and realistic.
+
+Return the result using the required structured format.
+"""
+
+        logger.debug(
+            "Itinerary prompt prepared"
+        )
+
+        # ====================================================
+        # 7. Call LLM with Pydantic schema
+        # ====================================================
+
+        response = await llm.generate_response(
+            prompt=prompt,
+            pydantic_schema=ItineraryAgentResponse
+        )
+
+        # ====================================================
+        # 8. Validate response
+        # ====================================================
+
+        plan = ItineraryAgentResponse.model_validate(
+            response
+        )
+
+        # ====================================================
+        # 9. Render for frontend
+        # ====================================================
+
+        itinerary_markdown = (
+            render_itinerary_markdown(plan)
+        )
+
+        logger.info(
+            "Itinerary Agent completed successfully"
+        )
+
+        # ====================================================
+        # 10. Return state update
+        # ====================================================
+
+        return {
+
+            "itinerary": itinerary_markdown,
+
+            "messages": [
+                AIMessage(
+                    content="Draft itinerary created."
+                )
+            ],
+
+            "llm_calls": (
+                state.get("llm_calls", 0) + 1
+            )
+        }
+
+    except Exception as exc:
+
+        logger.error(
+            "Itinerary Agent failed: %s",
+            exc,
+            exc_info=True
+        )
+
+        return {
+
+            "itinerary": (
+                "Unable to create the itinerary."
+            ),
+
+            "messages": [
+                AIMessage(
+                    content="Itinerary Agent failed."
+                )
+            ],
+
+            "llm_calls": (
+                state.get("llm_calls", 0) + 1
+            )
+        }

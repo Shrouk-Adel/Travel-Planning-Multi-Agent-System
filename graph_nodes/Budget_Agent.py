@@ -12,106 +12,71 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-class BudgetRiskLevel(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-
-
-class CostEstimate(BaseModel):
-    category: str = Field(
-        description=(
-            "Cost category, e.g. flights, accommodation, "
-            "food, transportation, activities, visa, insurance"
-        )
-    )
-    estimated_amount: Optional[float] = Field(default=None, description="Estimated cost for this category")
-    currency: Optional[str] = Field(default=None, description="Currency code, e.g. USD, EUR, EGP")
-    basis: Optional[str] = Field(
-        default=None,
-        description="Explanation of how the estimate was determined, e.g. live price, search result, approximate estimate",
-    )
-    is_estimate: bool = Field(default=True, description="Whether the amount is an approximate estimate")
-
-
-class BudgetRisk(BaseModel):
-    category: str = Field(description="Cost category associated with the risk")
-    risk_level: BudgetRiskLevel = Field(description="Level of budget risk")
-    reason: str = Field(description="Reason this category represents a budget risk")
-
-
 class BudgetAgentResponse(BaseModel):
-    currency: Optional[str] = Field(default=None, description="Primary currency used for the budget analysis")
-    estimated_costs: List[CostEstimate] = Field(default_factory=list, description="Estimated costs broken down by category")
-    estimated_total: Optional[float] = Field(default=None, description="Estimated total trip cost")
-    budget_provided: Optional[float] = Field(default=None, description="User's stated trip budget")
-    budget_remaining: Optional[float] = Field(
-        default=None,
-        description="Estimated amount remaining after subtracting the estimated trip cost from the user's budget",
-    )
-    budget_risks: List[BudgetRisk] = Field(default_factory=list, description="Potential areas where the trip may exceed the budget")
-    money_saving_suggestions: List[str] = Field(default_factory=list, description="Practical ways to reduce trip costs")
-    overall_feasibility: str = Field(
-        description="Overall assessment: feasible, potentially_feasible, or not_feasible"
-    )
-    feasibility_reason: str = Field(description="Short explanation supporting the feasibility assessment")
-    is_based_on_live_prices: bool = Field(
-        default=False,
-        description="Whether the analysis relies on current/live prices rather than approximate estimates",
-    )
-
+    overall_feasibility: str
+    feasibility_reason: str
+    estimated_total: Optional[float] = None
+    currency: Optional[str] = None
+    budget_remaining: Optional[float] = None
 
 openai = OpenAIConfig()
 
 
 async def Budget_Agent(state: TravelState):
-    """
-    Budget Agent that analyzes the user's travel request and provides
-    budget feasibility insights.
 
-    Args:
-        state (TravelState): The current state of travel.
+    logger.info("Start Budget Agent")
+
+    constraints = state.get("trip_constraints", {})
+
+    budget = constraints.get("budget")
+    currency = constraints.get("currency")
+    flight_results = state.get("flight_results", {})
+    hotel_results = state.get("hotel_results", {})
+    itinerary = state.get("itinerary", "")
+
+    prompt = f"""
+    Analyze the trip budget.
+
+    Budget: {budget} {currency or ""}
+    Flights: {flight_results}
+    Hotels: {hotel_results}
+    Activities: {itinerary}
+
+    Return:
+    - overall_feasibility
+    - feasibility_reason
+    - estimated_total
+    - currency
+    - budget_remaining
+
+    Keep the answer short.
     """
-    logger.info("start budget agent")
 
     try:
-        prompt = Budget_Agent_prompt.format(
-            user_query=state.get("user_query", ""),
-            trip_constraints=state.get("trip_constraints", {}),
-            flight_results=state.get("flight_results", {}),
-            hotel_results=state.get("hotel_results", {}),
-            weather_results=state.get("weather_results", {}),
-        )
-
         response = await openai.generate_response(
             prompt=prompt,
-            pydantic_schema=BudgetAgentResponse,
+            pydantic_schema=BudgetAgentResponse
         )
 
-        if response is None:
-            raise ValueError("Budget agent LLM call returned no parseable response")
+        return {
+            "budget_results": response,
+            "messages": [
+                AIMessage(content="Budget analysis completed.")
+            ],
+            "llm_calls": state.get("llm_calls", 0) + 1
+        }
 
     except Exception as exc:
+
         logger.error("Budget Agent failed", exc_info=True)
+
         return {
             "budget_results": {
                 "overall_feasibility": "unknown",
-                "feasibility_reason": (
-                    "Budget analysis is temporarily unavailable due to an "
-                    f"internal error: {exc}"
-                ),
-                "estimated_costs": [],
-                "budget_risks": [],
-                "money_saving_suggestions": [],
-                "is_based_on_live_prices": False,
+                "feasibility_reason": "Budget analysis unavailable."
             },
-            "messages": [AIMessage(content=f"Budget Agent failed with error: {exc}")],
-            "llm_calls": state.get("llm_calls", 0) + 1,
+            "messages": [
+                AIMessage(content="Budget Agent failed.")
+            ],
+            "llm_calls": state.get("llm_calls", 0) + 1
         }
-
-    return {
-        "budget_results": response,
-        "messages": [AIMessage(content="Budget assessment generated.")],
-        "llm_calls": state.get("llm_calls", 0) + 1,
-    }

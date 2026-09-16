@@ -160,9 +160,6 @@ Generate the final travel response for the user.
 Human Review:
 {review_instruction}
 
-User Request:
-{user_query}
-
 Supervisor Constraints:
 {trip_constraints}
 
